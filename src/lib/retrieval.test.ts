@@ -1,0 +1,36 @@
+import { describe, expect, it } from "vitest";
+import knowledgeBase from "../../data/portal-content.json";
+import { hasEnoughEvidence, retrieveChunks } from "./retrieval";
+import type { PortalKnowledgeBase } from "./portal-content";
+
+const chunks = (knowledgeBase as PortalKnowledgeBase).chunks;
+
+describe("retrieveChunks", () => {
+  it("retrieves the billing code resource for billing questions", () => {
+    const results = retrieveChunks(
+      "What billing code should I use for the Cubby Bed?",
+      chunks,
+    );
+
+    expect(results[0]?.id).toContain("billing-code");
+    expect(results[0]?.url).toContain("billing-codes");
+    expect(hasEnoughEvidence(results)).toBe(true);
+  });
+
+  it("retrieves ordering resources for order form questions", () => {
+    const results = retrieveChunks("Where is the order request form?", chunks);
+
+    expect(results[0]?.id).toContain("order-request-form");
+    expect(results[0]?.pageTitle).toContain("Ordering");
+    expect(hasEnoughEvidence(results)).toBe(true);
+  });
+
+  it("treats unrelated questions as weak evidence", () => {
+    const results = retrieveChunks(
+      "What is the best hiking trail near Denver?",
+      chunks,
+    );
+
+    expect(hasEnoughEvidence(results)).toBe(false);
+  });
+});
