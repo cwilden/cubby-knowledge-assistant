@@ -4,6 +4,17 @@
 
 This project prototypes an AI-powered knowledge assistant for the Cubby Supplier Portal. Rather than requiring DME partners to navigate through multiple static pages, the assistant enables natural language search across supplier documentation and returns source-backed answers with citations to the underlying Cubby material. The goal is to reduce friction during onboarding and common partner workflows while keeping responses grounded and verifiable.
 
+## Demo
+
+![Ask Cubby](docs/screenshot.png)
+
+## Technology Stack
+
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, and React Markdown. Chosen for rapid UI iteration, component reuse, and source-backed answer formatting.
+- Backend/API: Next.js Route Handlers. Handles retrieval, question-risk classification, answer generation, streaming responses, and API key protection on the server.
+- AI: OpenAI with `gpt-4.1-mini` by default. Chosen as a cost-conscious model with enough reasoning ability for grounded answer synthesis.
+- Data: Generated local JSON knowledge base for the MVP, with custom deterministic retrieval and citation mapping. This keeps the prototype inspectable while preserving a path toward semantic indexing later.
+
 ## Why This Problem?
 
 When navigating the portal as a DME, the biggest friction point was not that Cubby lacks information. It was that the information is spread across many pages, cards, forms, FAQs, and linked help-center articles. A DME partner may need to answer a simple question about billing codes, funding documents, appeals, product setup, or ordering, but still has to know where Cubby placed that resource. This makes information retrieval a high-leverage first problem to solve, and it creates the retrieval foundation needed for future workflow automation.
@@ -14,16 +25,12 @@ While my initial instinct was to automate Letter of Medical Necessity generation
 
 ## Architecture
 
-| Step | Component | Responsibility |
-| --- | --- | --- |
-| 1 | Public Cubby supplier pages + help-center articles | Source material for supplier questions |
-| 2 | Scraper | Fetches portal pages, discovers linked help articles, and decodes article bodies |
-| 3 | Section-heading chunker | Converts pages and articles into retrievable source sections |
-| 4 | Generated JSON knowledge base | Stores the public, read-only corpus used by the prototype |
-| 5 | Next.js API route | Receives questions and coordinates retrieval + answer generation |
-| 6 | Retrieval gate | Determines whether there is enough evidence to answer safely |
-| 7 | OpenAI grounded answer synthesis | Answers only from retrieved Cubby evidence |
-| 8 | Chat UI | Displays the response with clickable source citations |
+| Stage | Responsibility |
+| --- | --- |
+| Knowledge Ingestion | Fetches public Cubby supplier pages, discovers linked help articles, decodes article bodies, and stores section-heading chunks in a generated JSON knowledge base. |
+| Retrieval & Evidence | Retrieves relevant Cubby sections, maps them to trusted citations, and gates weak evidence before answer generation. |
+| Answer Generation | Uses OpenAI to synthesize concise answers only from retrieved Cubby evidence, with deterministic safe responses for high-risk question types. |
+| UI | Provides the Ask Cubby chat experience with suggested topics, streaming answers, markdown rendering, and compact citation cards. |
 
 If the retrieval gate cannot find enough relevant evidence, the assistant returns a safe refusal with no citations instead of asking the LLM to guess.
 
