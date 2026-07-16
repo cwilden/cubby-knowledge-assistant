@@ -1,4 +1,5 @@
 import Image from "next/image";
+import cubbyIcon from "@/app/icon.png";
 
 export function CubbyBotAvatar({ size = "default" }: { size?: "default" | "large" }) {
   const dimensions =
@@ -19,7 +20,7 @@ export function CubbyBotAvatar({ size = "default" }: { size?: "default" | "large
       className={`flex shrink-0 items-center justify-center bg-white shadow-sm ring-1 ring-[#d6e4ef] ${dimensions.container}`}
     >
       <Image
-        src="/cubby-smile.png"
+        src={cubbyIcon}
         alt="CubbyBot"
         width={dimensions.imageSize}
         height={dimensions.imageSize}
