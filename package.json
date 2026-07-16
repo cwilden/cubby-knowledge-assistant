@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "scrape": "tsx scripts/scrape-portal.ts",
+    "eval:classifier": "tsx scripts/evaluate-question-classifier.ts",
     "test": "vitest run"
   },
   "dependencies": {

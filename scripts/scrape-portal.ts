@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import type { Element } from "domhandler";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import slugify from "slugify";
@@ -341,7 +340,7 @@ function collectHelpCategoryLinksFromCategory(
 function collectChunksFromRoot(
   source: PortalSource,
   $: cheerio.CheerioAPI,
-  root: cheerio.Cheerio<Element>,
+  root: ReturnType<cheerio.CheerioAPI>,
 ): PortalChunk[] {
   const chunks: PortalChunk[] = [];
   let current: SectionDraft | undefined;

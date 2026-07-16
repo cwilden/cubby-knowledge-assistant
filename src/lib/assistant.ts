@@ -1,31 +1,29 @@
 import knowledgeBase from "../../data/portal-content.json";
-import { ASSISTANT_STATUS, type AssistantStatus } from "./assistant-status";
 import {
-  citationsForEvidence,
+  clarificationAnswer,
+  emptyQuestionAnswer,
+  fallbackAnswer,
+  medicalOrClinicalAdviceAnswer,
+  patientSpecificEligibilityAnswer,
+} from "./assistant-responses";
+import type { AssistantResponse } from "./assistant-types";
+import { STATE_REQUIREMENT_SOURCE_PREFIX } from "./cubby-resources";
+import {
+  createConversationalAnswer,
   createGroundedAnswer,
   createStreamingGroundedAnswer,
 } from "./openai";
 import type { PortalKnowledgeBase } from "./portal-content";
-import { classifyQuestionRisk, QUESTION_RISK } from "./question-risk";
+import {
+  classifyQuestion,
+  QUESTION_RISK,
+  type QuestionClassification,
+} from "./question-risk";
 import {
   hasEnoughEvidence,
   retrieveChunks,
   type RetrievalResult,
 } from "./retrieval";
-
-export type AssistantCitation = {
-  excerpt: string;
-  id: string;
-  title: string;
-  section: string;
-  url: string;
-};
-
-export type AssistantResponse = {
-  status: AssistantStatus;
-  answer: string;
-  citations: AssistantCitation[];
-};
 
 export type AnswerGenerator = (
   question: string,
@@ -38,162 +36,487 @@ export type StreamingAnswerGenerator = (
   onDelta: (delta: string) => void,
 ) => Promise<AssistantResponse>;
 
-const RELATED_SUPPLIER_RESOURCES = [
-  {
-    label: "Funding & Insurance",
-    url: "https://help.cubbybeds.com/en_us/funding-guide:-insurance-+-medicaid-process-SJ5IpfGGgl",
-  },
-  {
-    label: "Medicaid Resources",
-    url: "https://cubbybeds.com/pages/state-requirements",
-  },
-  {
-    label: "Contact Cubby Support",
-    url: "https://cubbybeds.com/pages/supplier-portal-contact",
-  },
-];
-const SCOPE_LIMITED_TOPIC_PATTERN =
-  /\b(coverage|covered|clinical|diagnosis|eligible|eligibility|insurance|medicaid|medical|patient|payer|policy|qualify|requirements)\b/i;
+type ConversationalAnswerGenerator = (
+  question: string,
+  context?: string,
+) => Promise<AssistantResponse>;
+
+type QuestionClassifier = (
+  question: string,
+  context?: string,
+) => Promise<QuestionClassification>;
+
+type AnswerOptions = {
+  classify?: QuestionClassifier;
+  context?: string;
+  generateConversation?: ConversationalAnswerGenerator;
+  generateAnswer?: AnswerGenerator;
+};
+
+type StreamingAnswerOptions = {
+  classify?: QuestionClassifier;
+  context?: string;
+  generateConversation?: ConversationalAnswerGenerator;
+  generateAnswer?: StreamingAnswerGenerator;
+};
+
+type AssistantResolution =
+  | {
+      response: AssistantResponse;
+      type: "static";
+    }
+  | {
+      evidence: RetrievalResult[];
+      question: string;
+      type: "grounded";
+    }
+  | {
+      context: string;
+      question: string;
+      type: "conversational";
+    };
+
+type ClarificationFollowUp =
+  | {
+      type: "none";
+    }
+  | {
+      option: string;
+      type: "selected";
+    }
+  | {
+      options: string[];
+      type: "needsSelection";
+    };
 
 const portalKnowledgeBase = knowledgeBase as PortalKnowledgeBase;
+const CLARIFICATION_EVIDENCE_SCORE_RATIO = 0.6;
+const MIN_GENERATION_EVIDENCE_SCORE = 6;
+const GENERATION_EVIDENCE_SCORE_RATIO = 0.5;
+const MEANINGFUL_TEXT_PATTERN = /[a-z0-9]/i;
+const ASSISTANT_CONTEXT_LABEL = "Assistant:";
+const CLARIFICATION_OPTION_PREFIX = "- ";
+const AFFIRMATIVE_FOLLOW_UPS = new Set([
+  "yes",
+  "yeah",
+  "yep",
+  "sure",
+  "ok",
+  "okay",
+  "please",
+  "that one",
+  "sounds good",
+]);
+const ORDINAL_SELECTIONS = new Map([
+  ["first", 0],
+  ["second", 1],
+  ["third", 2],
+  ["fourth", 3],
+  ["fifth", 4],
+]);
 
-function relatedResourceLinks() {
-  return RELATED_SUPPLIER_RESOURCES.map(
-    (resource) => `- [${resource.label}](${resource.url})`,
-  ).join("\n");
+export type { AssistantCitation, AssistantResponse } from "./assistant-types";
+
+function questionWithContext(question: string, context = "") {
+  if (!context.trim()) {
+    return question;
+  }
+
+  return `Recent conversation context:
+${context}
+
+Current user question:
+${question}`;
 }
 
 function streamStaticAnswer(answer: string, onDelta: (delta: string) => void) {
   onDelta(answer);
 }
 
-function patientSpecificEligibilityAnswer(evidence: RetrievalResult[]): AssistantResponse {
-  const stateRequirement = evidence.find((chunk) =>
-    chunk.sourceId.startsWith("state-requirements-for-"),
+function hasMeaningfulText(question: string) {
+  return MEANINGFUL_TEXT_PATTERN.test(question);
+}
+
+function normalizeDialogueReply(reply: string) {
+  return reply
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9\s]/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function lastAssistantContextMessage(context: string) {
+  const start = context.lastIndexOf(ASSISTANT_CONTEXT_LABEL);
+
+  if (start < 0) {
+    return "";
+  }
+
+  return context.slice(start + ASSISTANT_CONTEXT_LABEL.length).trim();
+}
+
+function clarificationOptionsFromContext(context: string) {
+  return lastAssistantContextMessage(context)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(CLARIFICATION_OPTION_PREFIX))
+    .map((line) => line.slice(CLARIFICATION_OPTION_PREFIX.length).trim())
+    .filter(Boolean);
+}
+
+function selectedOptionIndex(reply: string, optionCount: number) {
+  const normalizedReply = normalizeDialogueReply(reply);
+  const numericSelection = Number.parseInt(normalizedReply, 10);
+
+  if (
+    Number.isInteger(numericSelection) &&
+    numericSelection >= 1 &&
+    numericSelection <= optionCount
+  ) {
+    return numericSelection - 1;
+  }
+
+  const ordinalSelection = ORDINAL_SELECTIONS.get(normalizedReply);
+
+  if (
+    ordinalSelection !== undefined &&
+    ordinalSelection >= 0 &&
+    ordinalSelection < optionCount
+  ) {
+    return ordinalSelection;
+  }
+
+  return undefined;
+}
+
+function resolveClarificationFollowUp(
+  question: string,
+  context: string,
+): ClarificationFollowUp {
+  const options = clarificationOptionsFromContext(context);
+
+  if (options.length === 0) {
+    return { type: "none" };
+  }
+
+  const optionIndex = selectedOptionIndex(question, options.length);
+
+  if (optionIndex !== undefined) {
+    return {
+      option: options[optionIndex],
+      type: "selected",
+    };
+  }
+
+  if (!AFFIRMATIVE_FOLLOW_UPS.has(normalizeDialogueReply(question))) {
+    return { type: "none" };
+  }
+
+  if (options.length === 1) {
+    return {
+      option: options[0],
+      type: "selected",
+    };
+  }
+
+  return {
+    options,
+    type: "needsSelection",
+  };
+}
+
+function stateRequirementEvidence(evidence: RetrievalResult[]) {
+  return evidence.filter((chunk) =>
+    chunk.sourceId.startsWith(STATE_REQUIREMENT_SOURCE_PREFIX),
   );
-  const requirementScope = stateRequirement
-    ? `${stateRequirement.pageTitle} Medicaid supplier requirements`
-    : "the relevant Medicaid or payer requirements";
-
-  return {
-    status: ASSISTANT_STATUS.patientSpecificEligibility,
-    answer: `I can't determine whether a specific patient will be covered based on public supplier documentation alone.
-
-Public supplier documentation can still help prepare the submission:
-
-- Review ${requirementScope}.
-- Complete the required prescription and prior authorization forms listed in the source documents.
-- Work with the physician and OT/PT to prepare the required Letter of Medical Necessity and supporting documentation.
-- Confirm any patient-specific eligibility or documentation requirements with the payer or Cubby before submitting.
-
-These documented requirements do not guarantee approval and shouldn't be interpreted as a coverage determination for a specific patient.`,
-    citations: citationsForEvidence([], evidence),
-  };
 }
 
-function medicalOrClinicalAdviceAnswer(): AssistantResponse {
-  return {
-    status: ASSISTANT_STATUS.needsMoreContext,
-    answer:
-      "I can't provide medical or clinical advice. I can help locate Cubby supplier documentation, but clinical decisions should be confirmed with a qualified clinician and Cubby when appropriate.",
-    citations: [],
-  };
+function retrievalQuery(question: string, classification: QuestionClassification) {
+  const normalizedQuery = classification.searchQuery.trim() || question;
+
+  return [normalizedQuery, classification.state, classification.payer]
+    .filter(Boolean)
+    .join(" ");
 }
 
-export function fallbackAnswer(question = ""): AssistantResponse {
-  const scopeExplanation = SCOPE_LIMITED_TOPIC_PATTERN.test(question)
-    ? "\n\nQuestions about insurance coverage may depend on patient-specific clinical information, payer policies, and state requirements, which are outside the scope of this prototype."
-    : "";
+function evidenceMatchesClassification(
+  evidence: RetrievalResult[],
+  classification: QuestionClassification,
+) {
+  if (classification.state && stateRequirementEvidence(evidence).length === 0) {
+    return false;
+  }
+
+  if (!classification.payer) {
+    return true;
+  }
+
+  const payer = classification.payer.toLowerCase();
+
+  return evidence.some((chunk) =>
+    `${chunk.pageTitle} ${chunk.sectionTitle} ${chunk.text}`
+      .toLowerCase()
+      .includes(payer),
+  );
+}
+
+function retrieveEvidence(
+  question: string,
+  classification: QuestionClassification,
+) {
+  return retrieveChunks(
+    retrievalQuery(question, classification),
+    portalKnowledgeBase.chunks,
+  );
+}
+
+function focusEvidence(
+  evidence: RetrievalResult[],
+  scoreRatio: number,
+) {
+  const topScore = evidence[0]?.score;
+
+  if (!topScore) {
+    return [];
+  }
+
+  const minimumScore = Math.max(
+    MIN_GENERATION_EVIDENCE_SCORE,
+    topScore * scoreRatio,
+  );
+
+  return evidence.filter((chunk) => chunk.score >= minimumScore);
+}
+
+function focusEvidenceForGeneration(evidence: RetrievalResult[]) {
+  return focusEvidence(evidence, GENERATION_EVIDENCE_SCORE_RATIO);
+}
+
+function focusEvidenceForClarification(evidence: RetrievalResult[]) {
+  return focusEvidence(evidence, CLARIFICATION_EVIDENCE_SCORE_RATIO);
+}
+
+function isUsefulClarificationOption(option: string) {
+  return (
+    option.length > 2 &&
+    !option.endsWith(":") &&
+    !option.toLowerCase().startsWith("click here") &&
+    !/^\d+[.)]?\s/.test(option)
+  );
+}
+
+function clarificationOptionsFromEvidence(evidence: RetrievalResult[]) {
+  const focusedEvidence = focusEvidenceForClarification(evidence);
+  const options = new Set<string>();
+
+  for (const chunk of focusedEvidence) {
+    const option = chunk.pageTitle.trim();
+
+    if (isUsefulClarificationOption(option)) {
+      options.add(option);
+    }
+
+    if (options.size >= 5) {
+      break;
+    }
+  }
+
+  for (const chunk of focusedEvidence) {
+    const option = chunk.sectionTitle.trim();
+
+    if (
+      option !== chunk.pageTitle &&
+      isUsefulClarificationOption(option)
+    ) {
+      options.add(option);
+    }
+
+    if (options.size >= 5) {
+      break;
+    }
+  }
+
+  return Array.from(options);
+}
+
+function shouldUseFallbackAnswer(
+  evidence: RetrievalResult[],
+  classification: QuestionClassification,
+) {
+  if (!hasEnoughEvidence(evidence)) {
+    return true;
+  }
+
+  return (
+    classification.risk === QUESTION_RISK.highRiskCoverage &&
+    !evidenceMatchesClassification(evidence, classification)
+  );
+}
+
+async function resolveQuestion(
+  question: string,
+  classify: QuestionClassifier,
+  context = "",
+): Promise<AssistantResolution> {
+  const trimmedQuestion = question.trim();
+
+  if (!trimmedQuestion || !hasMeaningfulText(trimmedQuestion)) {
+    return {
+      response: emptyQuestionAnswer(),
+      type: "static",
+    };
+  }
+
+  const clarificationFollowUp = resolveClarificationFollowUp(
+    trimmedQuestion,
+    context,
+  );
+
+  if (clarificationFollowUp.type === "needsSelection") {
+    return {
+      response: clarificationAnswer({
+        options: clarificationFollowUp.options,
+        question: "Which option should I use?",
+      }),
+      type: "static",
+    };
+  }
+
+  if (clarificationFollowUp.type === "selected") {
+    const evidence = retrieveChunks(
+      clarificationFollowUp.option,
+      portalKnowledgeBase.chunks,
+    );
+
+    if (!hasEnoughEvidence(evidence)) {
+      return {
+        response: fallbackAnswer(),
+        type: "static",
+      };
+    }
+
+    return {
+      evidence: focusEvidenceForGeneration(evidence),
+      question: questionWithContext(clarificationFollowUp.option, context),
+      type: "grounded",
+    };
+  }
+
+  const classification = await classify(trimmedQuestion, context);
+
+  if (classification.requiresClarification) {
+    const evidenceOptions = clarificationOptionsFromEvidence(
+      retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks),
+    );
+
+    return {
+      response: clarificationAnswer({
+        options: evidenceOptions.length > 0
+          ? evidenceOptions
+          : classification.clarificationOptions,
+        question: classification.clarificationQuestion,
+      }),
+      type: "static",
+    };
+  }
+
+  if (!classification.isSupplierQuestion) {
+    return {
+      context,
+      question: trimmedQuestion,
+      type: "conversational",
+    };
+  }
+
+  if (classification.risk === QUESTION_RISK.medicalOrClinicalAdvice) {
+    return {
+      response: medicalOrClinicalAdviceAnswer(),
+      type: "static",
+    };
+  }
+
+  const evidence = retrieveEvidence(trimmedQuestion, classification);
+
+  if (classification.risk === QUESTION_RISK.patientSpecificEligibility) {
+    return {
+      response: patientSpecificEligibilityAnswer(
+        classification.state ? stateRequirementEvidence(evidence) : [],
+      ),
+      type: "static",
+    };
+  }
+
+  if (shouldUseFallbackAnswer(evidence, classification)) {
+    return {
+      response: fallbackAnswer({
+        includeScopeExplanation:
+          classification.risk === QUESTION_RISK.highRiskCoverage,
+      }),
+      type: "static",
+    };
+  }
 
   return {
-    status: ASSISTANT_STATUS.needsMoreContext,
-    answer: `I couldn't find documentation in the Cubby Supplier Portal that answers this question confidently.${scopeExplanation}
-
-You may find these related supplier resources helpful:
-
-${relatedResourceLinks()}`,
-    citations: [],
+    evidence: focusEvidenceForGeneration(evidence),
+    question: questionWithContext(trimmedQuestion, context),
+    type: "grounded",
   };
 }
 
 export async function answerQuestion(
   question: string,
-  generateAnswer: AnswerGenerator = createGroundedAnswer,
+  optionsOrGenerateAnswer: AnswerOptions | AnswerGenerator = {},
 ): Promise<AssistantResponse> {
-  const trimmedQuestion = question.trim();
+  const options =
+    typeof optionsOrGenerateAnswer === "function"
+      ? { generateAnswer: optionsOrGenerateAnswer }
+      : optionsOrGenerateAnswer;
+  const classify = options.classify ?? classifyQuestion;
+  const generateAnswer = options.generateAnswer ?? createGroundedAnswer;
+  const generateConversation =
+    options.generateConversation ?? createConversationalAnswer;
+  const resolution = await resolveQuestion(question, classify, options.context);
 
-  if (!trimmedQuestion) {
-    return {
-      status: ASSISTANT_STATUS.needsMoreContext,
-      answer: "Ask a Cubby supplier portal question to get a cited answer.",
-      citations: [],
-    };
+  if (resolution.type === "static") {
+    return resolution.response;
   }
 
-  const questionRisk = classifyQuestionRisk(trimmedQuestion);
-
-  if (questionRisk === QUESTION_RISK.medicalOrClinicalAdvice) {
-    return medicalOrClinicalAdviceAnswer();
+  if (resolution.type === "conversational") {
+    return generateConversation(resolution.question, resolution.context);
   }
 
-  if (questionRisk === QUESTION_RISK.patientSpecificEligibility) {
-    const evidence = retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks);
-
-    return patientSpecificEligibilityAnswer(evidence);
-  }
-
-  const evidence = retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks);
-
-  if (!hasEnoughEvidence(evidence)) {
-    return fallbackAnswer(trimmedQuestion);
-  }
-
-  return generateAnswer(trimmedQuestion, evidence);
+  return generateAnswer(resolution.question, resolution.evidence);
 }
 
 export async function streamAnswerQuestion(
   question: string,
   onDelta: (delta: string) => void,
-  generateAnswer: StreamingAnswerGenerator = createStreamingGroundedAnswer,
+  optionsOrGenerateAnswer: StreamingAnswerOptions | StreamingAnswerGenerator = {},
 ): Promise<AssistantResponse> {
-  const trimmedQuestion = question.trim();
+  const options =
+    typeof optionsOrGenerateAnswer === "function"
+      ? { generateAnswer: optionsOrGenerateAnswer }
+      : optionsOrGenerateAnswer;
+  const classify = options.classify ?? classifyQuestion;
+  const generateAnswer = options.generateAnswer ?? createStreamingGroundedAnswer;
+  const generateConversation =
+    options.generateConversation ?? createConversationalAnswer;
+  const resolution = await resolveQuestion(question, classify, options.context);
 
-  if (!trimmedQuestion) {
-    const response: AssistantResponse = {
-      status: ASSISTANT_STATUS.needsMoreContext,
-      answer: "Ask a Cubby supplier portal question to get a cited answer.",
-      citations: [],
-    };
+  if (resolution.type === "static") {
+    streamStaticAnswer(resolution.response.answer, onDelta);
+    return resolution.response;
+  }
+
+  if (resolution.type === "conversational") {
+    const response = await generateConversation(
+      resolution.question,
+      resolution.context,
+    );
 
     streamStaticAnswer(response.answer, onDelta);
     return response;
   }
 
-  const questionRisk = classifyQuestionRisk(trimmedQuestion);
-
-  if (questionRisk === QUESTION_RISK.medicalOrClinicalAdvice) {
-    const response = medicalOrClinicalAdviceAnswer();
-
-    streamStaticAnswer(response.answer, onDelta);
-    return response;
-  }
-
-  if (questionRisk === QUESTION_RISK.patientSpecificEligibility) {
-    const evidence = retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks);
-    const response = patientSpecificEligibilityAnswer(evidence);
-
-    streamStaticAnswer(response.answer, onDelta);
-    return response;
-  }
-
-  const evidence = retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks);
-
-  if (!hasEnoughEvidence(evidence)) {
-    const response = fallbackAnswer(trimmedQuestion);
-
-    streamStaticAnswer(response.answer, onDelta);
-    return response;
-  }
-
-  return generateAnswer(trimmedQuestion, evidence, onDelta);
+  return generateAnswer(resolution.question, resolution.evidence, onDelta);
 }

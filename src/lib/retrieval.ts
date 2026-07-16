@@ -1,4 +1,9 @@
 import type { PortalChunk } from "./portal-content";
+import {
+  STATE_REQUIREMENT_EVIDENCE_SECTIONS,
+  STATE_REQUIREMENT_STATE_SLUGS,
+  STATE_REQUIREMENT_SOURCE_PREFIX,
+} from "./cubby-resources";
 
 export type RetrievalResult = PortalChunk & {
   score: number;
@@ -52,6 +57,7 @@ const EXPANSIONS: Record<string, string[]> = {
   lmn: ["letter", "medical", "necessity"],
   map: ["pricing", "price"],
   medicaid: ["state", "requirements", "coverage"],
+  physician: ["doctor", "prescription", "lmn", "medical", "necessity"],
   reimbursement: ["billing", "code", "codes", "hcpcs"],
   order: ["ordering", "request", "form"],
   pricing: ["price", "map"],
@@ -59,46 +65,6 @@ const EXPANSIONS: Record<string, string[]> = {
   requirements: ["state", "medicaid", "insurance"],
   safety: ["safe", "features", "checklist"],
 };
-
-const STATE_REQUIREMENT_SOURCE_PREFIX = "state-requirements-for-";
-const STATE_REQUIREMENT_ROLE_SECTIONS = new Set([
-  "For caregivers",
-  "For doctors",
-  "For medical supplier",
-  "For OT/PT",
-]);
-const STATE_SLUGS = [
-  "alabama",
-  "arizona",
-  "california",
-  "colorado",
-  "connecticut",
-  "florida",
-  "georgia",
-  "illinois",
-  "indiana",
-  "iowa",
-  "kentucky",
-  "louisiana",
-  "maryland",
-  "massachusetts",
-  "michigan",
-  "minnesota",
-  "missouri",
-  "new-hampshire",
-  "new-york",
-  "north-carolina",
-  "ohio",
-  "oklahoma",
-  "oregon",
-  "pennsylvania",
-  "south-carolina",
-  "tennessee",
-  "texas",
-  "virginia",
-  "washington",
-  "wisconsin",
-];
 
 function normalizeToken(token: string) {
   const normalized = token.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -137,7 +103,7 @@ function stateSlugsFromQuery(query: string) {
   const normalizedQuery = query.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 
   return new Set(
-    STATE_SLUGS.filter((stateSlug) =>
+    STATE_REQUIREMENT_STATE_SLUGS.filter((stateSlug) =>
       normalizedQuery.includes(stateSlug.replace(/-/g, " ")),
     ),
   );
@@ -209,7 +175,7 @@ function scoreChunk(
 
   if (
     requestedStateSlugs.size > 0 &&
-    STATE_REQUIREMENT_ROLE_SECTIONS.has(chunk.sectionTitle)
+    STATE_REQUIREMENT_EVIDENCE_SECTIONS.has(chunk.sectionTitle)
   ) {
     score += 16;
   }

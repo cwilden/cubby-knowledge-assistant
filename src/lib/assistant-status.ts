@@ -1,5 +1,7 @@
 export const ASSISTANT_STATUS = {
   answered: "answered",
+  conversational: "conversational",
+  medicalOrClinicalAdvice: "medical_or_clinical_advice",
   needsMoreContext: "needs_more_context",
   patientSpecificEligibility: "patient_specific_eligibility",
 } as const;

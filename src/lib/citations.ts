@@ -1,7 +1,8 @@
-import type { AssistantCitation } from "./assistant";
+import type { AssistantCitation } from "./assistant-types";
 import type { RetrievalResult } from "./retrieval";
 
-export const STRONG_EVIDENCE_SCORE = 6;
+const STRONG_EVIDENCE_SCORE = 6;
+const RELATED_EVIDENCE_SCORE_RATIO = 0.85;
 const EXCERPT_MAX_LENGTH = 220;
 
 function excerptFromText(text: string) {
@@ -25,19 +26,36 @@ function canonicalCitationUrl(value: string) {
   return url.toString();
 }
 
+function canonicalCitationTitle(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function uniqueEvidenceByArticle(evidence: RetrievalResult[]) {
   const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
 
   return evidence.filter((chunk) => {
     const url = canonicalCitationUrl(chunk.url);
+    const title = canonicalCitationTitle(chunk.pageTitle);
 
-    if (seenUrls.has(url)) {
+    if (seenUrls.has(url) || seenTitles.has(title)) {
       return false;
     }
 
     seenUrls.add(url);
+    seenTitles.add(title);
     return true;
   });
+}
+
+function strongRelatedEvidence(evidence: RetrievalResult[]) {
+  const topScore = evidence[0]?.score ?? 0;
+  const relatedScore = topScore * RELATED_EVIDENCE_SCORE_RATIO;
+
+  return evidence.filter(
+    (chunk) =>
+      chunk.score >= STRONG_EVIDENCE_SCORE && chunk.score >= relatedScore,
+  );
 }
 
 export function citationsFromEvidence(
@@ -49,9 +67,7 @@ export function citationsFromEvidence(
   } = {},
 ): AssistantCitation[] {
   const { dedupeByArticle = true, strongOnly = false, limit } = options;
-  const filteredEvidence = strongOnly
-    ? evidence.filter((chunk) => chunk.score >= STRONG_EVIDENCE_SCORE)
-    : evidence;
+  const filteredEvidence = strongOnly ? strongRelatedEvidence(evidence) : evidence;
   const uniqueEvidence = dedupeByArticle
     ? uniqueEvidenceByArticle(filteredEvidence)
     : filteredEvidence;

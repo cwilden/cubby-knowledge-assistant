@@ -10,8 +10,12 @@ function encodeServerSentEvent(event: string, data: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { question?: unknown };
+    const body = (await request.json()) as {
+      context?: unknown;
+      question?: unknown;
+    };
     const question = typeof body.question === "string" ? body.question : "";
+    const context = typeof body.context === "string" ? body.context : "";
     const acceptsStream = request.headers
       .get("accept")
       ?.includes("text/event-stream");
@@ -20,9 +24,13 @@ export async function POST(request: Request) {
       const stream = new ReadableStream({
         async start(controller) {
           try {
-            const response = await streamAnswerQuestion(question, (delta) => {
-              controller.enqueue(encodeServerSentEvent("delta", { delta }));
-            });
+            const response = await streamAnswerQuestion(
+              question,
+              (delta) => {
+                controller.enqueue(encodeServerSentEvent("delta", { delta }));
+              },
+              { context },
+            );
 
             controller.enqueue(encodeServerSentEvent("final", response));
           } catch (error) {
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const response = await answerQuestion(question);
+    const response = await answerQuestion(question, { context });
 
     return NextResponse.json(response);
   } catch (error) {
