@@ -77,14 +77,15 @@ Future iterations involving document generation or insurance submissions would r
 
 ## Deliberately Not Built
 
-These features were intentionally deferred to keep the prototype focused on validating the highest-risk product assumption: that natural language retrieval improves partner efficiency.
+The biggest feature I intentionally chose not to build was AI-assisted LMN generation. It was tempting because it directly reduces administrative work, but it is not the right first investment without the surrounding workflow. Document generation depends on authenticated users, structured patient data, and secure collaboration between DME partners, caregivers, and clinicians. Rather than building AI on top of incomplete workflows, I chose to first improve information retrieval, which benefits every DME partner immediately and establishes the foundation for future workflow automation.
+
+Other deferred items:
 
 - Authentication
 - PHI workflows
 - Patient workspaces
 - Role-based user experiences (DME, caregiver, clinician)
 - Conversation history
-- LMN generation
 - Insurance QA
 - Analytics dashboards
 
@@ -121,7 +122,9 @@ Phase 4: Insurance QA and Submission Intelligence
 
 ## AI Usage
 
-AI was used to accelerate development, brainstorm implementation approaches, and review architecture decisions. Final product decisions, application structure, retrieval strategy, prompt design, data handling, and engineering tradeoffs were reviewed and modified based on my own judgment.
+AI was a development tool throughout this project, but I treated it as a collaborator rather than an authority. For example, I used it to brainstorm question-risk categories, then split the policy into four categories because patient-specific eligibility, general coverage guidance, medical advice, and general resource lookup each fail in different ways. I also used AI to review architecture ideas and surface edge cases around citations, prompt injection, and streaming behavior, while making the final decisions around retrieval strategy, guardrails, data handling, and roadmap sequencing based on my own judgment and tradeoff analysis.
+
+Production considerations include authentication, rate limiting, abuse prevention, API quota protection, and deriving conversation context server-side from an authenticated session instead of trusting client-provided transcript context.
 
 ## Setup
 

@@ -9,6 +9,8 @@ export type RetrievalResult = PortalChunk & {
   score: number;
 };
 
+export const MIN_RETRIEVAL_EVIDENCE_SCORE = 6;
+
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -209,5 +211,5 @@ export function retrieveChunks(
 export function hasEnoughEvidence(results: RetrievalResult[]) {
   const [topResult] = results;
 
-  return Boolean(topResult && topResult.score >= 6);
+  return Boolean(topResult && topResult.score >= MIN_RETRIEVAL_EVIDENCE_SCORE);
 }

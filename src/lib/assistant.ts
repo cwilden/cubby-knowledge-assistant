@@ -21,6 +21,7 @@ import {
 } from "./question-risk";
 import {
   hasEnoughEvidence,
+  MIN_RETRIEVAL_EVIDENCE_SCORE,
   retrieveChunks,
   type RetrievalResult,
 } from "./retrieval";
@@ -91,7 +92,6 @@ type ClarificationFollowUp =
 
 const portalKnowledgeBase = knowledgeBase as PortalKnowledgeBase;
 const CLARIFICATION_EVIDENCE_SCORE_RATIO = 0.6;
-const MIN_GENERATION_EVIDENCE_SCORE = 6;
 const GENERATION_EVIDENCE_SCORE_RATIO = 0.5;
 const MEANINGFUL_TEXT_PATTERN = /[a-z0-9]/i;
 const ASSISTANT_CONTEXT_LABEL = "Assistant:";
@@ -281,7 +281,7 @@ function focusEvidence(
   }
 
   const minimumScore = Math.max(
-    MIN_GENERATION_EVIDENCE_SCORE,
+    MIN_RETRIEVAL_EVIDENCE_SCORE,
     topScore * scoreRatio,
   );
 
