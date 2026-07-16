@@ -26,6 +26,17 @@ describe("retrieval quality", () => {
     expect(hasEnoughEvidence(results)).toBe(true);
   });
 
+  it("prioritizes damage resources from a normalized damage query", () => {
+    const results = retrieveChunks(
+      "arrived damaged shipping damage support photos",
+      chunks,
+    );
+
+    expect(results[0]?.pageTitle).toBe("My order arrived damaged. What do I do?");
+    expect(results[0]?.score).toBeGreaterThanOrEqual(results[1]?.score ?? 0);
+    expect(hasEnoughEvidence(results)).toBe(true);
+  });
+
   it("prioritizes state-specific Medicaid accordion sections", () => {
     const results = retrieveChunks(
       "What are the Florida Medicaid requirements for Cubby Bed coverage?",
