@@ -17,10 +17,18 @@ export function AssistantMessage({
   text: string;
 }) {
   const isAnswered = status === ASSISTANT_STATUS.answered;
+  const shouldShowStatusBadge =
+    status !== ASSISTANT_STATUS.answered &&
+    status !== ASSISTANT_STATUS.conversational;
+  const statusLabels = {
+    [ASSISTANT_STATUS.medicalOrClinicalAdvice]:
+      "Clinical guidance not available",
+    [ASSISTANT_STATUS.needsMoreContext]: "Needs more context",
+    [ASSISTANT_STATUS.patientSpecificEligibility]:
+      "Coverage cannot be determined",
+  };
   const statusLabel =
-    status === ASSISTANT_STATUS.patientSpecificEligibility
-      ? "Coverage cannot be determined"
-      : "Needs more context";
+    statusLabels[status as keyof typeof statusLabels] ?? "Needs more context";
 
   return (
     <div className="flex w-full max-w-5xl min-w-0 gap-3">
@@ -32,7 +40,7 @@ export function AssistantMessage({
             : "border-[#c9d9e6] bg-[#f8fbfd] before:border-[#c9d9e6] before:bg-[#f8fbfd]"
         }`}
       >
-        {!isAnswered ? (
+        {shouldShowStatusBadge ? (
           <div className="mb-3 flex items-center gap-2">
             <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-white px-2.5 text-xs font-semibold text-[#566078] ring-1 ring-[#e1e9f1]">
               <AlertTriangle className="h-3.5 w-3.5" aria-hidden />

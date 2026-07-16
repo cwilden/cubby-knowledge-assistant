@@ -62,9 +62,11 @@ export function CitationCards({
                       {citation.section}
                     </p>
                   ) : null}
-                  <p className="mt-0.5 truncate text-xs text-[#6c7285]">
-                    &ldquo;{citation.excerpt}&rdquo;
-                  </p>
+                  {citation.excerpt ? (
+                    <p className="mt-0.5 truncate text-xs text-[#6c7285]">
+                      &ldquo;{citation.excerpt}&rdquo;
+                    </p>
+                  ) : null}
                 </div>
                 <ArrowUpRight
                   className="h-3.5 w-3.5 shrink-0 text-[#7e879b] transition group-hover/source:text-[#4b9dcc]"

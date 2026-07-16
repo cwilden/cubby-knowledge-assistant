@@ -20,6 +20,9 @@ const EXAMPLE_QUESTIONS = [
   "How should we handle appeals and denials?",
 ];
 
+const CONTEXT_TURN_LIMIT = 5;
+const CONTEXT_ANSWER_LIMIT = 900;
+
 const PENDING_RESPONSE: AssistantResponse = {
   status: ASSISTANT_STATUS.answered,
   answer: "",
@@ -37,6 +40,16 @@ type ChatTurn = {
   response: AssistantResponse;
   isLoading: boolean;
 };
+
+function conversationContext(turns: ChatTurn[]) {
+  return turns
+    .slice(-CONTEXT_TURN_LIMIT)
+    .map(
+      (turn) => `User: ${turn.question}
+Assistant: ${turn.response.answer.slice(0, CONTEXT_ANSWER_LIMIT)}`,
+    )
+    .join("\n\n");
+}
 
 function parseServerSentEvents(
   buffer: string,
@@ -121,6 +134,7 @@ export function AssistantClient() {
 
     const turnId = nextTurnId.current;
     nextTurnId.current += 1;
+    const context = conversationContext(turns);
 
     setTurns((currentTurns) => [
       ...currentTurns,
@@ -143,7 +157,7 @@ export function AssistantClient() {
           Accept: "text/event-stream",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question: trimmedQuestion }),
+        body: JSON.stringify({ context, question: trimmedQuestion }),
       });
 
       if (!apiResponse.ok) {
