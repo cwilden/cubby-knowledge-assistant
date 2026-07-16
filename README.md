@@ -13,7 +13,7 @@ This project prototypes an AI-powered knowledge assistant for the Cubby Supplier
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, and React Markdown. Chosen for rapid UI iteration, component reuse, and source-backed answer formatting.
 - Backend/API: Next.js Route Handlers. Handles question-risk classification, normalized retrieval query generation, evidence retrieval, answer generation, streaming responses, and API key protection on the server.
 - AI: OpenAI with `gpt-4.1-mini` by default. Chosen as a cost-conscious model with enough reasoning ability for grounded answer synthesis.
-- Data: Generated local JSON knowledge base for the MVP, with custom deterministic retrieval and citation mapping. This keeps the prototype inspectable while preserving a path toward semantic indexing later.
+- Data: Generated local JSON knowledge base for the MVP, with custom deterministic retrieval and citation mapping. Given the relatively small public corpus, I chose a lightweight, inspectable retrieval pipeline that was easy to debug and evaluate rather than introducing vector infrastructure prematurely. As the corpus grows, semantic retrieval can be introduced without changing the overall architecture.
 
 ## Why This Problem?
 
@@ -25,7 +25,7 @@ Every unanswered question is also product feedback. Understanding what partners 
 
 While my initial instinct was to automate Letter of Medical Necessity generation, I intentionally chose to start with information retrieval. Document generation improves one portion of the partner journey, while faster knowledge retrieval improves onboarding, insurance submissions, caregiver questions, and order placement. It also establishes the information retrieval foundation that future workflow automation, including AI-assisted document generation and insurance QA, can build upon.
 
-Anticipated business impact: reducing information-retrieval friction is a high-leverage growth lever. I modeled a conservative 5% lift in partner activation, measured as time-to-first-order. For a cohort of 100 partners, this translates to roughly 60 incremental orders annually, unlocking significant ARR with zero increase in customer acquisition cost.
+Anticipated business impact: reducing information-retrieval friction is a high-leverage growth lever. I modeled a conservative 5% lift in partner activation, measured as time-to-first-order. For a cohort of 100 partners, this translates to roughly 60 incremental orders annually, representing incremental revenue without increasing customer acquisition cost.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ Traditional search requires users to know the terminology used throughout the po
 
 Implemented:
 
-- The assistant retrieves Cubby source sections before calling the LLM.
+- The assistant classifies the question before retrieval, then retrieves Cubby source sections before generating an answer.
 - A structured question-risk classifier runs before retrieval and generation. It categorizes questions as `GENERAL_INFORMATION`, `HIGH_RISK_COVERAGE`, `PATIENT_SPECIFIC_ELIGIBILITY`, or `MEDICAL_OR_CLINICAL_ADVICE`, extracts state/payer anchors when present, produces a concise typo-corrected retrieval query, and never answers the user's question.
 - Low-confidence classifications default to conservative handling rather than unrestricted answer generation. If the classifier call fails, the assistant falls back to a small conservative deterministic outage policy for obvious cases rather than attempting broad typo or intent matching.
 - The LLM is instructed to answer only from supplied Cubby evidence.
