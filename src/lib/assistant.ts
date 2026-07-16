@@ -13,7 +13,7 @@ import {
   createGroundedAnswer,
   createStreamingGroundedAnswer,
 } from "./openai";
-import type { PortalKnowledgeBase } from "./portal-content";
+import type { PortalChunk, PortalKnowledgeBase } from "./portal-content";
 import {
   classifyQuestion,
   QUESTION_RISK,
@@ -114,12 +114,6 @@ const ORDINAL_SELECTIONS = new Map([
   ["fourth", 3],
   ["fifth", 4],
 ]);
-const EXPLANATORY_OPTION_PREFIXES = [
-  "what are ",
-  "what is ",
-  "what s ",
-  "what does ",
-];
 
 export type { AssistantCitation, AssistantResponse } from "./assistant-types";
 
@@ -196,33 +190,25 @@ function selectedOptionIndex(reply: string, optionCount: number) {
 }
 
 function optionForRepeatedTopic(reply: string, options: string[]) {
-  const normalizedReply = normalizeDialogueReply(reply);
-
-  if (!normalizedReply) {
+  if (!normalizeDialogueReply(reply)) {
     return undefined;
   }
 
-  const exactOption = options.find(
-    (option) => normalizeDialogueReply(option) === normalizedReply,
-  );
+  const optionChunks: PortalChunk[] = options.map((option, index) => ({
+    id: `clarification-option-${index}`,
+    pageTitle: option,
+    sectionTitle: option,
+    sourceId: `clarification-option-${index}`,
+    text: option,
+    url: "",
+  }));
+  const [matchedOption] = retrieveChunks(reply, optionChunks, 1);
 
-  if (!exactOption) {
+  if (!matchedOption || !hasEnoughEvidence([matchedOption])) {
     return undefined;
   }
 
-  return (
-    options.find((option) => {
-      const normalizedOption = normalizeDialogueReply(option);
-
-      return (
-        normalizedOption !== normalizedReply &&
-        normalizedOption.includes(normalizedReply) &&
-        EXPLANATORY_OPTION_PREFIXES.some((prefix) =>
-          normalizedOption.startsWith(prefix),
-        )
-      );
-    }) ?? exactOption
-  );
+  return matchedOption.pageTitle;
 }
 
 function resolveClarificationFollowUp(
