@@ -114,6 +114,12 @@ const ORDINAL_SELECTIONS = new Map([
   ["fourth", 3],
   ["fifth", 4],
 ]);
+const EXPLANATORY_OPTION_PREFIXES = [
+  "what are ",
+  "what is ",
+  "what s ",
+  "what does ",
+];
 
 export type { AssistantCitation, AssistantResponse } from "./assistant-types";
 
@@ -189,6 +195,36 @@ function selectedOptionIndex(reply: string, optionCount: number) {
   return undefined;
 }
 
+function optionForRepeatedTopic(reply: string, options: string[]) {
+  const normalizedReply = normalizeDialogueReply(reply);
+
+  if (!normalizedReply) {
+    return undefined;
+  }
+
+  const exactOption = options.find(
+    (option) => normalizeDialogueReply(option) === normalizedReply,
+  );
+
+  if (!exactOption) {
+    return undefined;
+  }
+
+  return (
+    options.find((option) => {
+      const normalizedOption = normalizeDialogueReply(option);
+
+      return (
+        normalizedOption !== normalizedReply &&
+        normalizedOption.includes(normalizedReply) &&
+        EXPLANATORY_OPTION_PREFIXES.some((prefix) =>
+          normalizedOption.startsWith(prefix),
+        )
+      );
+    }) ?? exactOption
+  );
+}
+
 function resolveClarificationFollowUp(
   question: string,
   context: string,
@@ -204,6 +240,15 @@ function resolveClarificationFollowUp(
   if (optionIndex !== undefined) {
     return {
       option: options[optionIndex],
+      type: "selected",
+    };
+  }
+
+  const repeatedTopicOption = optionForRepeatedTopic(question, options);
+
+  if (repeatedTopicOption) {
+    return {
+      option: repeatedTopicOption,
       type: "selected",
     };
   }

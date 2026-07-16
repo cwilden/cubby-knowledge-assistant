@@ -604,6 +604,31 @@ Assistant: I can help with several insurance-related topics. What are you lookin
     expect(generateAnswer.mock.calls[0][0]).toContain("Appeals and denials");
   });
 
+  it("uses the explanatory option when a user repeats an ambiguous topic", async () => {
+    const classify = vi.fn();
+    const generateAnswer = vi.fn().mockResolvedValue({
+      status: ASSISTANT_STATUS.answered,
+      answer: "Waivers can help families access funding resources.",
+      citations: [],
+    });
+
+    await answerQuestion("waivers", {
+      classify,
+      context: `User: Waivers wa nan desu ka?
+Assistant: What information about waivers would you like to know?
+
+- Waivers
+- What are waivers?
+- How can I find a waiver in my state?
+- How can I apply for a waiver?`,
+      generateAnswer,
+    });
+
+    expect(classify).not.toHaveBeenCalled();
+    expect(generateAnswer).toHaveBeenCalledOnce();
+    expect(generatedQuestion(generateAnswer)).toContain("What are waivers?");
+  });
+
   it("answers concrete supplier-task questions without clarification", async () => {
     const generateAnswer = vi.fn().mockResolvedValue({
       status: ASSISTANT_STATUS.answered,
