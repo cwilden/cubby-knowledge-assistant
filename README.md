@@ -124,9 +124,8 @@ Phase 4: Insurance QA and Submission Intelligence
 
 ## AI Usage
 
-AI was a development tool throughout this project, but I treated it as a collaborator rather than an authority. For example, I used it to brainstorm question-risk categories, then split the policy into four categories because patient-specific eligibility, general coverage guidance, medical advice, and general resource lookup each fail in different ways. I also used AI to review architecture ideas and surface edge cases around citations, prompt injection, and streaming behavior, while making the final decisions around retrieval strategy, guardrails, data handling, and roadmap sequencing based on my own judgment and tradeoff analysis.
+AI was a development tool throughout this project, but I treated it as a collaborator rather than an authority. For example, I used it to brainstorm question-risk categories, then split the policy into four categories because patient-specific eligibility, general coverage guidance, medical advice, and general resource lookup each fail in different ways. I also used AI to review architecture ideas and challenge some of my implementation decisions, while manually testing edge cases around citations, prompt injection, streaming behavior, and high-risk question handling. The final decisions around retrieval strategy, guardrails, data handling, and roadmap sequencing were based on my own judgment and tradeoff analysis.
 
-Production considerations include authentication, rate limiting, abuse prevention, API quota protection, and deriving conversation context server-side from an authenticated session instead of trusting client-provided transcript context.
 
 ## Setup
 
