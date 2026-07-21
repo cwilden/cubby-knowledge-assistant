@@ -370,6 +370,14 @@ function clarificationOptionsFromEvidence(evidence: RetrievalResult[]) {
   return Array.from(options);
 }
 
+function hasExactSourceTitleMatch(question: string, evidence: RetrievalResult[]) {
+  const normalizedQuestion = normalizeDialogueReply(question);
+
+  return evidence.some(
+    (chunk) => normalizeDialogueReply(chunk.sectionTitle) === normalizedQuestion,
+  );
+}
+
 function shouldUseFallbackAnswer(
   evidence: RetrievalResult[],
   classification: QuestionClassification,
@@ -436,9 +444,17 @@ async function resolveQuestion(
   const classification = await classify(trimmedQuestion, context);
 
   if (classification.requiresClarification) {
-    const evidenceOptions = clarificationOptionsFromEvidence(
-      retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks),
-    );
+    const evidence = retrieveChunks(trimmedQuestion, portalKnowledgeBase.chunks);
+
+    if (hasExactSourceTitleMatch(trimmedQuestion, evidence)) {
+      return {
+        evidence: focusEvidenceForGeneration(evidence),
+        question: questionWithContext(trimmedQuestion, context),
+        type: "grounded",
+      };
+    }
+
+    const evidenceOptions = clarificationOptionsFromEvidence(evidence);
 
     return {
       response: clarificationAnswer({

@@ -485,6 +485,36 @@ Assistant: Cubby Beds typically use HCPCS E1399.`,
     expect(response.citations).toEqual([]);
   });
 
+  it("answers directly when a clarification-classified question exactly matches a source section", async () => {
+    const generateAnswer = vi.fn().mockResolvedValue({
+      status: ASSISTANT_STATUS.answered,
+      answer: "Use the appeals and denials guidance.",
+      citations: [],
+    });
+
+    await answerQuestion("How should we handle appeals and denials?", {
+      classify: classifier({
+        ...generalInformation,
+        clarificationOptions: [
+          "Supplier Portal FAQs",
+          "How should we handle appeals and denials?",
+        ],
+        clarificationQuestion:
+          "What aspect of appeals and denials do you need help with?",
+        requiresClarification: true,
+        searchQuery: "appeals denials",
+      }),
+      generateAnswer,
+    });
+
+    expect(generateAnswer).toHaveBeenCalledOnce();
+    expect(generatedQuestion(generateAnswer)).toContain(
+      "How should we handle appeals and denials?",
+    );
+    expect(generatedEvidence(generateAnswer).map((chunk) => chunk.sectionTitle))
+      .toContain("How should we handle appeals and denials?");
+  });
+
   it.each([
     "Insurance",
     "Billing",
